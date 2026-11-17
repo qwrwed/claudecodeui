@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { scan } from 'react-scan'
 
 import App from '@/App'
+import { installBasePathNetworkPrefix, withBasePath } from '@/shared/utils'
 import '@/index.css'
 import 'katex/dist/katex.min.css'
 
@@ -16,9 +17,13 @@ import '@/modules/i18n'
 // `localStorage.setItem('react-scan', 'on')` and reload.
 scan({ enabled: import.meta.env.DEV && localStorage.getItem('react-scan') === 'on' })
 
+// Route root-relative fetch/EventSource URLs through the reverse-proxy prefix
+// before anything renders and starts requesting data.
+installBasePathNetworkPrefix()
+
 // Register service worker for PWA + Web Push support
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(err => {
+  navigator.serviceWorker.register(withBasePath('/sw.js')).catch(err => {
     console.warn('Service worker registration failed:', err);
   });
 }

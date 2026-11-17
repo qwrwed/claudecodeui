@@ -13,6 +13,59 @@ export const IS_PLATFORM = import.meta.env?.VITE_IS_PLATFORM === 'true';
 
 // ---------------------------
 
+//----------------- REVERSE-PROXY PATH PREFIX ------------
+
+/**
+ * Path prefix the app is served under behind a reverse proxy, such as `/cloudcli`
+ * when a proxy maps `https://host/cloudcli/` to this server. The server injects it
+ * into index.html from its BASE_PATH setting; it is '' when served from the root.
+ */
+export const BASE_PATH: string = (
+  typeof window !== 'undefined'
+    ? (window as Window & { __CLOUDCLI_BASE_PATH__?: string }).__CLOUDCLI_BASE_PATH__ || ''
+    : ''
+).replace(/\/+$/, '');
+
+/**
+ * Prefixes a root-relative URL (`/api/...`) with BASE_PATH. Absolute URLs,
+ * protocol-relative URLs and URLs that already carry the prefix come back unchanged.
+ */
+export function withBasePath(url: string): string {
+  if (!BASE_PATH || !url.startsWith('/') || url.startsWith('//')) {
+    return url;
+  }
+  if (url === BASE_PATH || url.startsWith(`${BASE_PATH}/`) || url.startsWith(`${BASE_PATH}?`)) {
+    return url;
+  }
+  return `${BASE_PATH}${url}`;
+}
+
+/**
+ * Sends every fetch() and EventSource call that names a root-relative URL through
+ * BASE_PATH, so the `/api/...` call sites need no change of their own. Call it once
+ * at startup, before rendering; it does nothing when BASE_PATH is ''.
+ */
+export function installBasePathNetworkPrefix(): void {
+  if (!BASE_PATH || typeof window === 'undefined') {
+    return;
+  }
+
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) =>
+    originalFetch(typeof input === 'string' ? withBasePath(input) : input, init);
+
+  const OriginalEventSource = window.EventSource;
+  if (OriginalEventSource) {
+    window.EventSource = class extends OriginalEventSource {
+      constructor(url: string | URL, eventSourceInitDict?: EventSourceInit) {
+        super(typeof url === 'string' ? withBasePath(url) : url, eventSourceInitDict);
+      }
+    };
+  }
+}
+
+// ---------------------------
+
 //----------------- TAILWIND CLASS COMPOSITION ------------
 
 /**

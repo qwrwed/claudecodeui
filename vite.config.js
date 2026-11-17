@@ -9,7 +9,7 @@ import { getConnectableHost, normalizeLoopbackHost } from './shared/networkHosts
 // injecting it keeps the frontend free of imports that reach outside src/.
 const pkg = createRequire(import.meta.url)('./package.json')
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   // Load env file based on `mode` in the current working directory.
   const env = loadEnv(mode, process.cwd(), '')
 
@@ -26,6 +26,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    // Relative asset URLs in production builds, so the same build works at the
+    // domain root and under a reverse-proxy path prefix (the server's BASE_PATH).
+    base: command === 'build' ? './' : '/',
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version)
     },

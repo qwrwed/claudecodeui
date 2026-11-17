@@ -2,8 +2,11 @@
 // Cache only manifest (needed for PWA install). HTML and JS are never pre-cached
 // so a rebuild + refresh always picks up the latest assets.
 const CACHE_NAME = 'claude-ui-v2';
+// Path prefix the app is served under behind a reverse proxy ('' at the root).
+// The worker is registered at `<prefix>/sw.js`, so its scope carries the prefix.
+const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/+$/, '');
 const urlsToCache = [
-  '/manifest.json'
+  `${BASE_PATH}/manifest.json`
 ];
 
 // Install event
@@ -27,7 +30,7 @@ self.addEventListener('fetch', event => {
   // Navigation requests (HTML) — always go to network, no caching
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match('/manifest.json').then(() =>
+      fetch(event.request).catch(() => caches.match(`${BASE_PATH}/manifest.json`).then(() =>
         new Response('<h1>Offline</h1><p>Please check your connection.</p>', {
           headers: { 'Content-Type': 'text/html' }
         })
@@ -84,8 +87,8 @@ self.addEventListener('push', event => {
 
   const options = {
     body: payload.body || '',
-    icon: '/logo-256.png',
-    badge: '/logo-128.png',
+    icon: `${BASE_PATH}/logo-256.png`,
+    badge: `${BASE_PATH}/logo-128.png`,
     data: payload.data || {},
     tag: payload.data?.tag || `${payload.data?.sessionId || 'global'}:${payload.data?.code || 'default'}`,
     renotify: true
@@ -118,7 +121,7 @@ self.addEventListener('notificationclick', event => {
           return;
         }
       }
-      return self.clients.openWindow(urlPath);
+      return self.clients.openWindow(`${BASE_PATH}${urlPath}`);
     })
   );
 });

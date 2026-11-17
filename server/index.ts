@@ -61,6 +61,26 @@ const __dirname = getModuleDirectory(import.meta.url);
 // The server source runs from /server, while the compiled output runs from /dist-server/server.
 // Resolving the app root once keeps every repo-level lookup below aligned across both layouts.
 const APP_ROOT = findApplicationRoot(__dirname);
+
+// Path prefix a reverse proxy serves the app under, such as `/cloudcli` for a
+// proxy that maps `https://host/cloudcli/` to this server's root. The proxy strips
+// the prefix, so server routes stay at the root; only the URLs the browser builds
+// need it. '' (the default) serves the app from the domain root unchanged.
+const BASE_PATH = (process.env.BASE_PATH || '').trim().replace(/\/+$/, '').replace(/^(?=[^/])/, '/');
+
+// Returns index.html with every root-relative or `./` src/href anchored at BASE_PATH
+// (the domain root when it is '') and, under a prefix, the prefix exposed to the frontend.
+function renderIndexHtml(indexPath: string): string {
+    // The production build uses relative (`./`) asset URLs; anchor them at the app
+    // root so they also resolve from nested routes such as /session/<id>.
+    const html = fs.readFileSync(indexPath, 'utf8').replace(/(\s(?:src|href)=")\.\//g, '$1/');
+    if (!BASE_PATH) {
+        return html;
+    }
+    const prefixed = html.replace(/(\s(?:src|href)=")\/(?!\/)/g, `$1${BASE_PATH}/`);
+    const config = `<script>window.__CLOUDCLI_BASE_PATH__=${JSON.stringify(BASE_PATH)};window.__ROUTER_BASENAME__=${JSON.stringify(BASE_PATH)};</script>`;
+    return prefixed.replace(/<head>/i, `<head>${config}`);
+}
 const installMode = fs.existsSync(path.join(APP_ROOT, '.git')) ? 'git' : 'npm';
 // Version of the code that is actually running, captured once at process
 // startup. This intentionally does NOT re-read package.json per request: after
@@ -204,12 +224,22 @@ app.use('/api/agent', agentRoutes);
 
 app.use('/api/voice', authenticateToken, voiceRoutes);
 
+// Under a path prefix, the PWA manifest's start_url, scope and icon paths need it too.
+if (BASE_PATH) {
+    app.get('/manifest.json', (req, res) => {
+        const manifest = fs.readFileSync(path.join(APP_ROOT, 'public', 'manifest.json'), 'utf8');
+        res.type('application/manifest+json').send(manifest.replace(/"\/(?!\/)/g, `"${BASE_PATH}/`));
+    });
+}
+
 // Serve public files (like api-docs.html)
 app.use(express.static(path.join(APP_ROOT, 'public')));
 
 // Static files served after API routes
 // Add cache control: HTML files should not be cached, but assets can be cached
 app.use(express.static(path.join(APP_ROOT, 'dist'), {
+    // index.html is served by the catch-all route below, which applies BASE_PATH.
+    index: false,
     setHeaders: (res, filePath) => {
         if (filePath.endsWith('.html')) {
             // Prevent HTML caching to avoid service worker issues after builds
@@ -247,7 +277,7 @@ app.get('*', (req, res) => {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         res.setHeader('Pragma', 'no-cache');
         res.setHeader('Expires', '0');
-        res.sendFile(indexPath);
+        res.type('html').send(renderIndexHtml(indexPath));
     } else {
         // In development, redirect to Vite dev server only if dist doesn't exist
         const redirectHost = getConnectableHost(req.hostname);
